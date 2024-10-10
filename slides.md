@@ -60,9 +60,13 @@ Liberica is the JDK officially recommended by <logos-spring-icon />
 
 # So, what is ultimate?
 
+<v-clicks>
+
 - Smallest
 - Fatsest startup
 - Something inbetween
+
+</v-clicks>
 
 ---
 layout: statement
@@ -72,21 +76,7 @@ layout: statement
 
 ---
 
-# How do we create an image?
-
-Let's start from trivial.
-
-```docker {none|1|3|4|all}
-FROM bellsoft/liberica-runtime-container:jdk-21.0.3_10-musl
-
-COPY . /app
-RUN cd /app && ./gradlew build
-ENTRYPOINT     java -jar /app/build/libs/spring-petclinic*.jar
-```
-
----
-
-# `Dockerfile` directives
+# Common ground
 
 1. Each directive creates a layer of the image.
 2. Layers are *immutable*
@@ -105,12 +95,13 @@ RUN rm -rf /app
 
 4. We would like image to be light, but it's not :(
 
-</v-click>  
+</v-click>
+
 ---
 
-# Our `Dockerfile`
+# Let's start simple
 
-```docker {1|3|4|5}
+```docker {none|1|3|4|all}
 FROM bellsoft/liberica-runtime-container:jdk-21.0.3_10-musl
 
 COPY . /app
@@ -1022,20 +1013,22 @@ It depends
 
 # How to make it better?
 
-<v-clicks depth="2">
 
 1. Build JAR (in docker or not)
-2. Create new image that will run the JAR with CRaC arguments in `ENTRYPOINT`
-3. Run the container with capabilities:
-    1. CAP_SYS_PTRACE
-    2. CAP_CHECKPOINT_RESTORE
-4. Container will run and stop
-5. Commit the container like
-    ```bash
-    docker commit container-id new-tag
-    ```
+2. 
 
-</v-clicks>
+```bash
+docker run -d --name pre_crac -it -p8080:8080 \
+  --cap-add CAP_SYS_PTRACE --cap-add CAP_CHECKPOINT_RESTORE\
+  pre_crac
+docker exec -it pre_crac jcmd 127 JDK.checkpoint
+```
+
+3. Container will run and stop
+4. Commit the container like
+    ```bash
+    docker commit pre_crac post_crac
+    ```
 
 ---
 layout: two-cols
@@ -1060,6 +1053,28 @@ layout: two-cols
 2. Requires more steps
 
 ---
+
+# And **of course** native image!
+
+```docker {1|5|8|13|12}
+FROM bellsoft/liberica-native-image-kit-container:jdk-21-nik-23.1.3-stream-musl as builder
+
+WORKDIR /app
+ADD . /app/
+RUN cd /app && ./gradlew nativeCompile -x test
+
+
+FROM bellsoft/alpaquita-linux-base:stream-musl
+
+WORKDIR /app
+EXPOSE 8081
+ENTRYPOINT ["/app/petclinic-native"]
+COPY --from=builder /app/spring-petclinic-main/target/spring-petclinic /app/petclinic-native
+```
+
+<v-click at="1">Might fail on a huge application</v-click>
+
+---
 layout: statement
 ---
 
@@ -1072,6 +1087,7 @@ layout: statement
 1. Use layers for faster deployment
 2. Use CDS for faster startup without many compromises
 3. Use CRaC for a *lightning-fast* startup (with compromises)
+4. Use Liberica NIK for *lightning-fast* startup (when your application is small-ish and NI-compatible)
 
 ---
 layout: two-cols-header
